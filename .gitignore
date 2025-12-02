@@ -1,0 +1,33 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# Environment variables
+.env
+
+# IDE settings
+.vscode/
+.idea/
+.cursor/
+*.swp
+
+# OS generated files
+.DS_Store
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Data files (Large datasets)
+data/
+*.csv
+*.xlsx
+*.parquet
