@@ -26,8 +26,8 @@ env/
 # Jupyter Notebooks
 .ipynb_checkpoints/
 
-# Data files (Large datasets)
-data/
-*.csv
-*.xlsx
-*.parquet
+# Large data files - exclude from git
+data/*.xlsx
+data/*.csv
+data/Open_PO_Spend_large.parquet
+data/spend_data_large_sourcing.parquet
