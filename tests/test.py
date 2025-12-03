@@ -6,13 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuration
-TENANT_ID = os.getenv("TENANT_ID", "autodesk.onmicrosoft.com")
+TENANT_ID = os.getenv("TENANT_ID")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("SECRET_VALUE")
 
 # OpenAI Configuration
 SERVICE_NAME = os.getenv("SERVICE_NAME")
-DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")
+DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")  # Make configurable via .env
 API_VERSION = os.getenv("API_VERSION")
 
 if not CLIENT_ID or not CLIENT_SECRET:
@@ -55,11 +55,11 @@ if token:
         "messages": [
             {
                 "role": "system",
-                "content": "You are an AI assistant that helps employees with their questions."
+                "content": "You are an Software Category Expert Classifier. You output the most likely Software Category for the given line item text."
             },
             {
                 "role": "user",
-                "content": "What is the smartest way to run ai on a dataframe in python that is large and has a lot of columns and rows?"
+                "content": "supplier name: Microsoft, line item text: Microsoft VS Studio Copilot licenses 300 users"
             }
         ],
         "max_tokens": 1000

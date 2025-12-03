@@ -1,171 +1,418 @@
 import os
-import asyncio
-import aiohttp
-import pandas as pd
+import requests
 import json
-import time
 from dotenv import load_dotenv
-from itables import show
+from tqdm import tqdm
+import time
+import tiktoken
 
-# Load environment variables
 load_dotenv()
 
-# --- CONFIGURATION ---
-TENANT_ID = os.getenv("TENANT_ID", "autodesk.onmicrosoft.com")
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("SECRET_VALUE")
-SERVICE_NAME = os.getenv("SERVICE_NAME")
-DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")
-API_VERSION = os.getenv("API_VERSION", "2024-02-01")
-
-# Limit concurrent requests to avoid rate limiting
-MAX_CONCURRENT_REQUESTS = 5 
-
-def get_access_token():
+def categorize_lookup_table(lookup_df, batch_size=None, delay=0.2, rows_per_call=10, checkpoint_path='lookup_checkpoint.parquet'):
     """
-    Retrieves the Azure AD OAuth2 access token synchronously.
-    (Tokens last for ~1 hour, so we don't need to fetch this async every time)
-    """
-    url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
-    payload = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "scope": "https://cognitiveservices.azure.com/.default",
-        "grant_type": "client_credentials"
-    }
+    Run Azure OpenAI on lookup table with batching, cost tracking, and checkpointing.
     
+    Args:
+        lookup_df: DataFrame with Spend_Data_Vendor_Number, Spend_Data_Line_Item_Text columns
+        batch_size: Total rows to process (None = all unprocessed rows)
+        delay: Seconds between API calls to avoid rate limiting
+        rows_per_call: Number of rows to send in each API call (batching for efficiency)
+        checkpoint_path: Path to save progress checkpoints
+    
+    Returns:
+        DataFrame with populated category and sub_category columns
+    """
+    
+    # Load config
+    TENANT_ID = os.getenv("TENANT_ID")
+    CLIENT_ID = os.getenv("CLIENT_ID")
+    CLIENT_SECRET = os.getenv("SECRET_VALUE")
+    SERVICE_NAME = os.getenv("SERVICE_NAME")
+    DEPLOYMENT_NAME = os.getenv("DEPLOYMENT_NAME")
+    API_VERSION = os.getenv("API_VERSION")
+    
+    # Token counting for cost tracking
     try:
-        # We use 'requests' here just for the initial token fetch
-        import requests
-        response = requests.post(url, data=payload)
+        encoding = tiktoken.encoding_for_model("gpt-4o")
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    total_input_tokens = 0
+    total_output_tokens = 0
+    
+    def get_token():
+        """Get fresh access token from Azure AD."""
+        token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+        token_payload = {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "scope": "https://cognitiveservices.azure.com/.default",
+            "grant_type": "client_credentials"
+        }
+        response = requests.post(token_url, data=token_payload)
         response.raise_for_status()
         return response.json().get("access_token")
-    except Exception as e:
-        print(f"Error getting token: {e}")
-        return None
-
-async def categorize_batch(session, batch_df, token, batch_id):
-    """
-    Sends a batch of rows to Azure OpenAI for categorization.
-    """
+    
+    print("Getting access token...")
+    token = get_token()
+    print("✓ Token received\n")
+    
     api_url = f"https://{SERVICE_NAME}.openai.azure.com/openai/deployments/{DEPLOYMENT_NAME}/chat/completions?api-version={API_VERSION}"
     
-    # Convert rows to a string format for the prompt
-    # Adjust columns based on what you actually have in your data
-    # For example: 'Vendor Name', 'Description', 'Amount'
-    records_text = batch_df.to_json(orient="records") 
+    # System prompt for categorization (batched version)
+    system_prompt = """You are a Software Spend Category Expert.
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+Given vendor names and line item texts, classify each into:
+1. category: The parent category (must match one of the categories below exactly)
+2. sub_category: A more specific sub-category (must match one of the subcategories below exactly)
+
+Use ONLY the categories and subcategories listed here:
+
+Artificial Intelligence
+- AI Code Assistant
+- AI Governance, Risk & Compliance (GRC)
+- AI Image Generators
+- AI Sales Assistant
+- Generative AI (General)
+- Machine Learning Platforms
+- AI Model Providers
+- MCP Server
+
+Analytics & Data
+- Analytics Platform
+- Business Intelligence
+- Data Analytics (General)
+- Data Management
+- Data Platform
+- Data Governance
+- Data Science Platforms
+- ETL Tools
+- Master Data Management (MDM)
+- Web Analytics
+
+Business Management & Operations
+- Business Management (General)
+- Operations Management
+
+Collaboration & Productivity
+- Collaboration (General)
+- Project Management (General)
+- Resource Management
+- Diagramming Software
+- Whiteboarding
+- Mind Mapping
+- Wiki Software
+- Knowledge Management
+- Workflow Automation
+- Team Collaboration
+- Online Meetings
+- Productivity (General)
+
+Communication
+- Email Clients
+- Web Email Services
+- Instant Messaging
+- Personal Instant Messaging
+
+Content & Marketing
+- Content Management (General)
+- Digital Asset Management (DAM)
+- Engagement Platform
+- Marketing Automation
+- Marketing Technology
+- Advertising Platforms
+- Social Media Management
+- Sales Enablement
+- Revenue AI
+- Sales & Analytics
+- News & Entertainment
+- Social Networks
+
+CRM & Customer Service
+- CRM (General)
+- Contact Management
+- Sales (General)
+- Sales Tracking
+- Customer Support (General)
+- Customer Data Platform (CDP)
+- Business Process Outsourcing (BPO)
+
+Design & Media
+- Design (General)
+- Product Design
+- Image Editing
+- Vector Graphics
+- Typography Tools
+- CAD
+- Animation
+- Rendering
+- Non-linear Editing
+- Motion Graphics
+- Special Effects
+
+Development
+- IDEs
+- Developer Tools (General)
+- Code Hosting
+- Application Development
+- API Tools
+- Debugging Tools
+- Release Management
+- Testing Tools
+- Testing & Automation (General)
+- Website Monitoring
+- Forums
+- CI/CD
+
+E-Learning & HR
+- Learning Management Systems (LMS)
+- E-Learning (General)
+- Human Capital Management (HCM)
+- Applicant Tracking Systems (ATS)
+- Performance Management
+- Time & Attendance
+- Education Platforms
+
+ERP & Finance
+- ERP (General)
+- Supply Chain & Logistics
+- Procurement
+- Contracting
+- e-Signature
+- Inventory Management
+- POS Systems
+- eCommerce Platforms
+- Expense Management (General)
+- Payroll Software
+- Finance Systems
+- Treasury & Risk Management
+- Property Management
+- Transportation & Travel
+- Vendor Management Systems
+
+Infrastructure & IT
+- Infrastructure (General)
+- Cloud Computing Platform
+- Hosting Services
+- Cloud Storage
+- Content Sharing
+- Data Center / Hosting
+- IT Services
+- IT Asset Management (ITAM)
+- Asset Management (General)
+- IT Management Suites
+- Logging
+- Observability (General)
+- IT Service Management (ITSM)
+- Engineers
+- Application Support
+- Change Mgmt / SI / Product Dev
+- Subcontractors
+- Tech Centers
+- Resellers
+- Internet of Things (IoT)
+- as a Service (aaS)
+
+Networking & Telecom
+- Mobile
+- Data
+- Fixed Line
+- VPN Clients
+- Network Monitoring
+- Remote Access
+
+Security & Compliance
+- Security (General)
+- Cyber Security (General)
+- Antivirus
+- Firewalls
+- VPN Software
+- Identity Platform
+- Password Managers
+- Encryption
+- MFA
+- Web Application Firewall (WAF)
+- Endpoint Forensics
+- Network Forensics
+- Compliance Software
+
+Hardware
+- Laptops / Macs
+- Server Hardware
+- Tech Centres
+
+Operating Systems & Native Apps
+- Windows Native Applications
+- MacOS Native Applications
+- OS Utilities
+- OS Productivity Tools
+
+Virtualization & Cloud
+- Virtualization (General)
+- Virtual Machines
+- Hypervisors
+- Containerization
+
+Payment Solutions
+- eCommerce Payments
+
+Middleware
+- Integration Middleware
+
+Health
+- Health Tech (General)
+- Healthcare (EHR/EMR)
+
+Respond ONLY with a valid JSON array. Each object must have "index", "category", and "sub_category".
+Example format:
+[{"index": 0, "category": "Development", "sub_category": "IDEs"}, {"index": 1, "category": "Security & Compliance", "sub_category": "Password Managers"}]
+
+The index corresponds to the order of items in the input (0-based).
+Do not include any other text or explanation."""
+
+    # Filter to unprocessed rows only (for resume capability)
+    unprocessed_mask = lookup_df['category'].isna()
+    rows_to_process_df = lookup_df[unprocessed_mask]
     
-    system_prompt = (
-        "You are a data categorization assistant. "
-        "Analyze the following JSON list of transactions. "
-        "For each transaction, assign a 'Category' (e.g., Software, Hardware, Services, Travel). "
-        "Return ONLY a valid JSON list of objects with the original 'id' and the new 'Category'. "
-        "Do not include markdown formatting."
-    )
+    if batch_size:
+        rows_to_process_df = rows_to_process_df.head(batch_size)
+    
+    if len(rows_to_process_df) == 0:
+        print("✓ All rows already processed!")
+        return lookup_df
+    
+    print(f"Processing {len(rows_to_process_df)} rows in batches of {rows_per_call}...")
+    print(f"Estimated API calls: {(len(rows_to_process_df) + rows_per_call - 1) // rows_per_call}")
+    
+    indices = rows_to_process_df.index.tolist()
+    processed_count = 0
+    error_count = 0
+    
+    for i in tqdm(range(0, len(indices), rows_per_call), desc="Batches"):
+        batch_indices = indices[i:i + rows_per_call]
+        batch_rows = lookup_df.loc[batch_indices]
+        
+        # Build batch message
+        items = []
+        for j, (idx, row) in enumerate(batch_rows.iterrows()):
+            vendor = row.get('Spend_Data_Vendor_Name', row.get('Spend_Data_Vendor_Number', 'Unknown'))
+            line_item = row['Spend_Data_Line_Item_Text']
+            items.append(f"{j}. Vendor: {vendor} | Line Item: {line_item}")
+        
+        user_message = "\n".join(items)
+        
+        # Count input tokens
+        input_text = system_prompt + user_message
+        input_tokens = len(encoding.encode(input_text))
+        total_input_tokens += input_tokens
+        
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        chat_payload = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            "max_tokens": 100 * len(batch_indices),  # Scale with batch size
+            "temperature": 0.1  # Low temperature for consistent categorization
+        }
+        
+        try:
+            response = requests.post(api_url, headers=headers, json=chat_payload)
+            
+            # Refresh token if expired (401 Unauthorized)
+            if response.status_code == 401:
+                print("\n🔄 Refreshing token...")
+                token = get_token()
+                headers["Authorization"] = f"Bearer {token}"
+                response = requests.post(api_url, headers=headers, json=chat_payload)
+            
+            response.raise_for_status()
+            result = response.json()
+            ai_response = result['choices'][0]['message']['content']
+            
+            # Count output tokens
+            output_tokens = len(encoding.encode(ai_response))
+            total_output_tokens += output_tokens
+            
+            # Parse batch response
+            parsed = json.loads(ai_response)
+            
+            for item in parsed:
+                if item['index'] < len(batch_indices):
+                    actual_idx = batch_indices[item['index']]
+                    lookup_df.loc[actual_idx, 'category'] = item['category']
+                    lookup_df.loc[actual_idx, 'sub_category'] = item['sub_category']
+                    processed_count += 1
+                    
+        except json.JSONDecodeError:
+            error_count += len(batch_indices)
+            print(f"\n⚠ Batch {i//rows_per_call}: Parse error - marking rows for retry")
+            for idx in batch_indices:
+                lookup_df.loc[idx, 'category'] = 'PARSE_ERROR'
+                lookup_df.loc[idx, 'sub_category'] = 'Retry needed'
+        except requests.exceptions.RequestException as e:
+            error_count += len(batch_indices)
+            print(f"\n✗ Batch {i//rows_per_call}: API error: {e}")
+            for idx in batch_indices:
+                lookup_df.loc[idx, 'category'] = 'API_ERROR'
+                lookup_df.loc[idx, 'sub_category'] = str(e)[:100]
+        
+        # Save checkpoint every 10 batches (100 rows with default settings)
+        if (i // rows_per_call + 1) % 10 == 0:
+            lookup_df.to_parquet(checkpoint_path)
+            tqdm.write(f"💾 Checkpoint saved ({processed_count} rows processed)")
+        
+        time.sleep(delay)
+    
+    # Final checkpoint save
+    lookup_df.to_parquet(checkpoint_path)
+    
+    # Cost calculation (GPT-4o-mini pricing: $0.15/1M input, $0.60/1M output)
+    input_cost = (total_input_tokens / 1_000_000) * 0.15
+    output_cost = (total_output_tokens / 1_000_000) * 0.60
+    total_cost = input_cost + output_cost
+    
+    print(f"\n{'='*60}")
+    print(f"✓ PROCESSING COMPLETE")
+    print(f"{'='*60}")
+    print(f"📊 Results:")
+    print(f"   Rows processed:  {processed_count:,}")
+    print(f"   Errors:          {error_count:,}")
+    print(f"\n📈 Token Usage:")
+    print(f"   Input tokens:    {total_input_tokens:,}")
+    print(f"   Output tokens:   {total_output_tokens:,}")
+    print(f"   Total tokens:    {total_input_tokens + total_output_tokens:,}")
+    print(f"\n💰 Cost (GPT-4o-mini pricing):")
+    print(f"   Input cost:      ${input_cost:.4f}")
+    print(f"   Output cost:     ${output_cost:.4f}")
+    print(f"   Total cost:      ${total_cost:.4f}")
+    print(f"\n💾 Checkpoint saved to: {checkpoint_path}")
+    print(f"{'='*60}")
+    
+    return lookup_df
 
-    payload = {
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": records_text}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 2000
-    }
 
-    try:
-        async with session.post(api_url, headers=headers, json=payload) as response:
-            if response.status != 200:
-                text = await response.text()
-                print(f"Batch {batch_id} failed: {response.status} - {text}")
-                return []
-            
-            result = await response.json()
-            content = result['choices'][0]['message']['content']
-            
-            # Parse the JSON response from AI
-            # Using a robust parsing strategy is recommended here (e.g. cleaning markdown code blocks)
-            if content.startswith(""):
-                content = content.replace("", "").replace("```", "")
-            
-            return json.loads(content.strip())
-            
-    except Exception as e:
-        print(f"Error processing batch {batch_id}: {e}")
-        return []
-
-async def process_dataframe(df, batch_size=20):
+def retry_errors(lookup_df, delay=0.5):
     """
-    Main async loop to process the entire dataframe in batches.
+    Retry rows that had PARSE_ERROR or API_ERROR.
+    Processes one row at a time for reliability.
     """
-    token = get_access_token()
-    if not token:
-        print("Failed to authenticate.")
-        return None
-
-    # Create a temporary ID column to map results back reliably
-    df = df.copy()
-    df['id'] = range(len(df))
+    error_mask = lookup_df['category'].isin(['PARSE_ERROR', 'API_ERROR'])
+    error_count = error_mask.sum()
     
-    # We only send relevant columns to save tokens
-    # CHANGE THESE to your actual column names
-    cols_to_send = ['id', 'Vendor', 'Description'] 
-    # Ensure these columns exist, otherwise fall back to all
-    work_df = df[cols_to_send] if set(cols_to_send).issubset(df.columns) else df
-
-    connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_REQUESTS)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        
-        # create batches
-        for i in range(0, len(work_df), batch_size):
-            batch = work_df.iloc[i : i + batch_size]
-            tasks.append(categorize_batch(session, batch, token, i // batch_size))
-        
-        print(f"Starting processing of {len(tasks)} batches...")
-        start_time = time.time()
-        
-        # Run all batches
-        results = await asyncio.gather(*tasks)
-        
-        print(f"Processing complete in {time.time() - start_time:.2f} seconds.")
-
-    # Flatten results (list of lists -> list of dicts)
-    flat_results = [item for sublist in results for item in sublist]
+    if error_count == 0:
+        print("✓ No errors to retry!")
+        return lookup_df
     
-    # Merge results back to original dataframe
-    results_df = pd.DataFrame(flat_results)
+    print(f"Retrying {error_count} rows with errors...")
     
-    if not results_df.empty and 'id' in results_df.columns:
-        final_df = df.merge(results_df[['id', 'Category']], on='id', how='left')
-        return final_df
-    else:
-        print("No valid results returned or merging failed.")
-        return df
-
-# Example Usage Block
-if __name__ == "__main__":
-    # Create dummy data for testing
-    data = {
-        "Vendor": ["Microsoft", "Delta Air Lines", "Uber", "AWS", "Staples"],
-        "Description": ["Azure Subscription", "Flight to NY", "Ride to airport", "Hosting fees", "Office supplies"],
-        "Amount": [1000, 500, 45, 200, 150]
-    }
-    df = pd.DataFrame(data)
+    # Reset error rows to None so they get reprocessed
+    lookup_df.loc[error_mask, 'category'] = None
+    lookup_df.loc[error_mask, 'sub_category'] = None
     
-    # Run the async process
-    result_df = asyncio.run(process_dataframe(df, batch_size=2))
-    print("\n--- Final Result ---")
-    print(result_df)### Key Features of this Code:
-
-    """
-1.  **`get_access_token`**: Reuses your exact auth logic (Service Principal + Client Credentials).
-2.  **`aiohttp`**: Used instead of `requests` to allow multiple batches to fly at once.
-3.  **`MAX_CONCURRENT_REQUESTS`**: Limits parallel calls so you don't get rate-limited (429 errors) by Azure.
-4.  **Batching**: Groups rows (default 20) to save time.
-5.  **ID Mapping**: Adds a temporary `id` column to ensure the AI's answers attach to the correct original row (AI can sometimes skip rows or reorder them).
-"""
+    # Process with single row per call for reliability
+    return categorize_lookup_table(lookup_df, batch_size=error_count, delay=delay, rows_per_call=1)
