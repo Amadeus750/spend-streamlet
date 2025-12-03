@@ -66,18 +66,68 @@ st.markdown("""
         border-bottom: 2px solid rgba(99, 102, 241, 0.4);
     }
     
+    /* Light sidebar for better readability */
     div[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1a1a2e 0%, #0f0f23 100%);
+        background: #f8fafc !important;
     }
     
-    div[data-testid="stSidebar"] p, 
+    div[data-testid="stSidebar"] > div {
+        background: #f8fafc !important;
+    }
+    
+    section[data-testid="stSidebar"] {
+        background: #f8fafc !important;
+    }
+    
+    /* All sidebar text - dark for readability */
+    div[data-testid="stSidebar"] * {
+        color: #1e293b !important;
+    }
+    
+    div[data-testid="stSidebar"] h2 {
+        color: #0f172a !important;
+        font-size: 1.4rem !important;
+        font-weight: 700 !important;
+    }
+    
+    div[data-testid="stSidebar"] h3 {
+        color: #334155 !important;
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+        border-bottom: 2px solid #6366f1 !important;
+        padding-bottom: 5px !important;
+    }
+    
     div[data-testid="stSidebar"] label {
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Filter labels - Fiscal Year, Category, etc. */
+    .stSelectbox label, .stMultiSelect label, .stTextInput label {
+        color: #1e293b !important;
+        font-weight: 700 !important;
         font-size: 1rem !important;
     }
     
-    .stSelectbox label, .stMultiSelect label {
-        color: #c084fc !important;
-        font-weight: 500;
+    div[data-testid="stSidebar"] .stMultiSelect label,
+    div[data-testid="stSidebar"] .stSelectbox label,
+    div[data-testid="stSidebar"] .stTextInput label {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+    }
+    
+    /* Target the label p elements inside widgets */
+    div[data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+    }
+    
+    div[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
+        color: #0f172a !important;
+        font-weight: 700 !important;
         font-size: 1rem !important;
     }
     
@@ -165,43 +215,50 @@ st.markdown("---")
 
 # Sidebar filters
 with st.sidebar:
-    st.markdown("## 🎛️ Filters")
+    st.markdown('<h2 style="color: #0f172a; font-size: 1.4rem; font-weight: 700;">🎛️ Filters</h2>', unsafe_allow_html=True)
     st.markdown("---")
     
     # Time Filters
-    st.markdown("### 📅 Time Period")
+    st.markdown('<h3 style="color: #334155; font-size: 1.05rem; font-weight: 600; border-bottom: 2px solid #6366f1; padding-bottom: 5px;">📅 Time Period</h3>', unsafe_allow_html=True)
     
     # Fiscal Year filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Fiscal Year</p>', unsafe_allow_html=True)
     years = sorted(df['Fiscal_Year'].unique())
     selected_years = st.multiselect(
         "Fiscal Year",
         options=years,
         default=years,
-        help="Select one or more fiscal years"
+        help="Select one or more fiscal years",
+        label_visibility="collapsed"
     )
     
     # Fiscal Quarter filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Fiscal Quarter</p>', unsafe_allow_html=True)
     quarters = sorted(df['Quarter'].dropna().unique())
     selected_quarters = st.multiselect(
         "Fiscal Quarter",
         options=quarters,
         default=[],
-        help="Select quarters to filter (leave empty for all)"
+        help="Select quarters to filter (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     st.markdown("---")
-    st.markdown("### 📁 Categories")
+    st.markdown('<h3 style="color: #334155; font-size: 1.05rem; font-weight: 600; border-bottom: 2px solid #6366f1; padding-bottom: 5px;">📁 Categories</h3>', unsafe_allow_html=True)
     
     # Category filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Category</p>', unsafe_allow_html=True)
     categories = sorted(df['category'].dropna().unique())
     selected_categories = st.multiselect(
         "Category",
         options=categories,
         default=[],
-        help="Select categories to filter (leave empty for all)"
+        help="Select categories to filter (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     # Sub-category filter (dynamic based on category selection)
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Sub-Category</p>', unsafe_allow_html=True)
     if selected_categories:
         available_subcategories = sorted(
             df[df['category'].isin(selected_categories)]['sub_category'].dropna().unique()
@@ -213,60 +270,71 @@ with st.sidebar:
         "Sub-Category",
         options=available_subcategories,
         default=[],
-        help="Select sub-categories to filter (leave empty for all)"
+        help="Select sub-categories to filter (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     st.markdown("---")
-    st.markdown("### 🌍 Organizational Structure")
+    st.markdown('<h3 style="color: #334155; font-size: 1.05rem; font-weight: 600; border-bottom: 2px solid #6366f1; padding-bottom: 5px;">🌍 Organizational Structure</h3>', unsafe_allow_html=True)
     
     # Geo filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">🌍 Geo/Region</p>', unsafe_allow_html=True)
     geos = sorted(df['Spend_Data_Geo'].dropna().unique())
     selected_geos = st.multiselect(
-        "🌍 Geo/Region",
+        "Geo/Region",
         options=geos,
         default=[],
-        help="Select geographic regions (leave empty for all)"
+        help="Select geographic regions (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     # Division filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">🏛️ Division</p>', unsafe_allow_html=True)
     divisions = sorted(df['Spend_Data_Division_Description'].dropna().unique())
     selected_divisions = st.multiselect(
-        "🏛️ Division",
+        "Division",
         options=divisions,
         default=[],
-        help="Select divisions (leave empty for all)"
+        help="Select divisions (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     # Organization filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">🏢 Organization</p>', unsafe_allow_html=True)
     organizations = sorted(df['Spend_Data_Organization'].dropna().unique())
     selected_organizations = st.multiselect(
-        "🏢 Organization",
+        "Organization",
         options=organizations,
         default=[],
-        help="Select organizations (leave empty for all)"
+        help="Select organizations (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     # Business Unit filter
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">💼 Business Unit</p>', unsafe_allow_html=True)
     business_units = sorted(df['Spend_Data_Business_Unit_Description'].dropna().unique())
     selected_business_units = st.multiselect(
-        "💼 Business Unit",
+        "Business Unit",
         options=business_units,
         default=[],
-        help="Select business units (leave empty for all)"
+        help="Select business units (leave empty for all)",
+        label_visibility="collapsed"
     )
     
     st.markdown("---")
-    st.markdown("### 🔍 Vendor")
+    st.markdown('<h3 style="color: #334155; font-size: 1.05rem; font-weight: 600; border-bottom: 2px solid #6366f1; padding-bottom: 5px;">🔍 Vendor</h3>', unsafe_allow_html=True)
     
     # Get unique vendors for autocomplete
     all_vendors = sorted(df['Spend_Data_Vendor_Name'].dropna().unique())
     
     # Vendor search with autocomplete
+    st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Search Vendor</p>', unsafe_allow_html=True)
     vendor_search = st.text_input(
         "Search Vendor",
         placeholder="Type to search vendors...",
         help="Type to see matching vendors",
-        key="vendor_search_input"
+        key="vendor_search_input",
+        label_visibility="collapsed"
     )
     
     # Show matching suggestions if user is typing
@@ -279,17 +347,19 @@ with st.sidebar:
             # Limit to top 10 matches for better UX
             display_vendors = matching_vendors[:10]
             if len(matching_vendors) > 10:
-                st.caption(f"Showing top 10 of {len(matching_vendors)} matches")
+                st.markdown('<p style="color: #374151; font-size: 0.85rem;">Showing top 10 of {} matches</p>'.format(len(matching_vendors)), unsafe_allow_html=True)
             
             # Let user select from matching vendors
+            st.markdown('<p style="color: #000000; font-weight: 700; font-size: 0.95rem; margin-bottom: 0;">Select vendor</p>', unsafe_allow_html=True)
             selected_vendor = st.selectbox(
                 "Select vendor",
                 options=[""] + display_vendors,
                 format_func=lambda x: "-- Select a vendor --" if x == "" else x,
-                help="Select a vendor from matches"
+                help="Select a vendor from matches",
+                label_visibility="collapsed"
             )
         else:
-            st.caption("No matching vendors found")
+            st.markdown('<p style="color: #374151; font-size: 0.85rem;">No matching vendors found</p>', unsafe_allow_html=True)
 
 # Apply filters
 filtered_df = df.copy()
