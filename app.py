@@ -70,36 +70,61 @@ st.divider()
 # Sidebar filters
 with st.sidebar:
     st.header("🎛️ Filters")
+    
+    # Get default values
+    years = sorted(df['Fiscal_Year'].unique())
+    quarters = sorted(df['Quarter'].dropna().unique())
+    categories = sorted(df['category'].dropna().unique())
+    geos = sorted(df['Spend_Data_Geo'].dropna().unique())
+    divisions = sorted(df['Spend_Data_Division_Description'].dropna().unique())
+    organizations = sorted(df['Spend_Data_Organization'].dropna().unique())
+    business_units = sorted(df['Spend_Data_Business_Unit_Description'].dropna().unique())
+    all_vendors = sorted(df['Spend_Data_Vendor_Name'].dropna().unique())
+    
+    # Clear all filters button
+    if st.button("🗑️ Clear All Filters", use_container_width=True):
+        # Reset all filter keys to defaults
+        st.session_state["filter_years"] = years  # All years selected by default
+        st.session_state["filter_quarters"] = []
+        st.session_state["filter_categories"] = []
+        st.session_state["filter_subcategories"] = []
+        st.session_state["filter_geos"] = []
+        st.session_state["filter_divisions"] = []
+        st.session_state["filter_organizations"] = []
+        st.session_state["filter_business_units"] = []
+        st.session_state["filter_vendor_search"] = ""
+        st.rerun()
+    
     st.markdown("---")
     
     # Time Filters
     st.subheader("📅 Time Period")
     
-    years = sorted(df['Fiscal_Year'].unique())
     selected_years = st.multiselect(
         "Fiscal Year",
         options=years,
         default=years,
-        help="Select one or more fiscal years"
+        help="Select one or more fiscal years",
+        key="filter_years"
     )
     
-    quarters = sorted(df['Quarter'].dropna().unique())
     selected_quarters = st.multiselect(
         "Fiscal Quarter",
         options=quarters,
         default=[],
-        help="Select quarters to filter (leave empty for all)"
+        help="Select quarters to filter (leave empty for all)",
+        key="filter_quarters"
     )
     
     st.divider()
     st.subheader("📁 Categories")
     
-    categories = sorted(df['category'].dropna().unique())
     selected_categories = st.multiselect(
         "Category",
         options=categories,
         default=[],
-        help="Select categories to filter (leave empty for all)"
+        help="Select categories to filter (leave empty for all)",
+        key="filter_categories"
     )
     
     if selected_categories:
@@ -113,53 +138,53 @@ with st.sidebar:
         "Sub-Category",
         options=available_subcategories,
         default=[],
-        help="Select sub-categories to filter (leave empty for all)"
+        help="Select sub-categories to filter (leave empty for all)",
+        key="filter_subcategories"
     )
     
     st.divider()
     st.subheader("🌍 Organization")
     
-    geos = sorted(df['Spend_Data_Geo'].dropna().unique())
     selected_geos = st.multiselect(
         "Geo/Region",
         options=geos,
         default=[],
-        help="Select geographic regions (leave empty for all)"
+        help="Select geographic regions (leave empty for all)",
+        key="filter_geos"
     )
     
-    divisions = sorted(df['Spend_Data_Division_Description'].dropna().unique())
     selected_divisions = st.multiselect(
         "Division",
         options=divisions,
         default=[],
-        help="Select divisions (leave empty for all)"
+        help="Select divisions (leave empty for all)",
+        key="filter_divisions"
     )
     
-    organizations = sorted(df['Spend_Data_Organization'].dropna().unique())
     selected_organizations = st.multiselect(
         "Organization",
         options=organizations,
         default=[],
-        help="Select organizations (leave empty for all)"
+        help="Select organizations (leave empty for all)",
+        key="filter_organizations"
     )
     
-    business_units = sorted(df['Spend_Data_Business_Unit_Description'].dropna().unique())
     selected_business_units = st.multiselect(
         "Business Unit",
         options=business_units,
         default=[],
-        help="Select business units (leave empty for all)"
+        help="Select business units (leave empty for all)",
+        key="filter_business_units"
     )
     
     st.divider()
     st.subheader("🔍 Vendor")
     
-    all_vendors = sorted(df['Spend_Data_Vendor_Name'].dropna().unique())
-    
     vendor_search = st.text_input(
         "Search Vendor",
         placeholder="Type to search vendors...",
-        help="Type to see matching vendors"
+        help="Type to see matching vendors",
+        key="filter_vendor_search"
     )
     
     selected_vendor = None
