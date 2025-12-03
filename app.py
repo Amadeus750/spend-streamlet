@@ -63,7 +63,7 @@ def format_currency(value):
 df = load_data()
 
 # Header
-st.title("💰 Spend Analytics Dashboard")
+st.title("💰 Enterprise Managed Software Spend Analytics Dashboard")
 st.caption("**Sourcing Portfolio:** Technology  •  **Sourcing Category:** Enterprise Managed Software")
 st.divider()
 
